@@ -136,7 +136,7 @@ func (pl *BoltDBLIFOPool) Pop() (pool.Item, bool) {
 		b := tx.Bucket([]byte(pl.bucket))
 		c := b.Cursor()
 
-		k, v := c.Last()
+		k, v := c.First()
 
 		p, err := pl.inflate(v)
 
