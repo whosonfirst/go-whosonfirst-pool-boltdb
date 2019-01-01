@@ -1,11 +1,8 @@
 package boltdb
 
 import (
-	"fmt"
-	"github.com/aaronland/go-string/random"
 	"github.com/boltdb/bolt"
 	"github.com/whosonfirst/go-whosonfirst-pool"
-	_ "log"
 	"strconv"
 )
 
@@ -19,7 +16,6 @@ type BoltDBLIFOPool struct {
 	bucket      string
 	inflate     InflateFunc
 	deflate     DeflateFunc
-	random_opts *random.Options
 }
 
 func NewBoltDBLIFOIntPool(dsn string, bucket string) (pool.LIFOPool, error) {
@@ -72,16 +68,11 @@ func NewBoltDBLIFOPool(dsn string, bucket string, deflate DeflateFunc, inflate I
 		return nil, err
 	}
 
-	opts := random.DefaultOptions()
-	opts.AlphaNumeric = true
-	opts.Length = 16
-
 	pl := BoltDBLIFOPool{
 		db:          db,
 		bucket:      bucket,
 		inflate:     inflate,
 		deflate:     deflate,
-		random_opts: opts,
 	}
 
 	return &pl, nil
@@ -115,22 +106,23 @@ func (pl *BoltDBLIFOPool) Push(pi pool.Item) {
 
 	pl.db.Update(func(tx *bolt.Tx) error {
 
+		b := tx.Bucket([]byte(pl.bucket))
+
 		i, err := pl.deflate(pi)
 
 		if err != nil {
 			return err
 		}
 
-		r, err := random.String(pl.random_opts)
+		id, err := b.NextSequence()
 
 		if err != nil {
-			return err
+		   return err
 		}
 
+		k := strconv.FormatInt(int64(id), 10)		
 		v := i.(string)
-		k := fmt.Sprintf("%s#%s", v, r)		// mmmmmaybe?
 
-		b := tx.Bucket([]byte(pl.bucket))
 		return b.Put([]byte(k), []byte(v))
 	})
 }
