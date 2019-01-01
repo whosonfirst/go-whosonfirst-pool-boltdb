@@ -11,6 +11,7 @@ rmdeps:
 	if test -d src; then rm -rf src; fi 
 
 deps:   prep
+	@GOPATH=$(shell pwd) go get "github.com/aaronland/go-string"
 	@GOPATH=$(shell pwd) go get "github.com/whosonfirst/go-whosonfirst-pool"
 	@GOPATH=$(shell pwd) go get "github.com/boltdb/bolt"
 

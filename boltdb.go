@@ -1,37 +1,47 @@
 package boltdb
 
 import (
-	"errors"
+	"fmt"
+	"github.com/aaronland/go-string/random"
 	"github.com/boltdb/bolt"
 	"github.com/whosonfirst/go-whosonfirst-pool"
-	"log"
+	_ "log"
+	"strconv"
 )
 
 type DeflateFunc func(pool.Item) (interface{}, error)
 
-type InflateFunc func(interface{}, error) (pool.Item, error)
+type InflateFunc func(interface{}) (pool.Item, error)
 
 type BoltDBLIFOPool struct {
 	pool.LIFOPool
-	db      *bolt.DB
-	bucket  string
-	inflate InflateFunc
-	deflate DeflateFunc
+	db          *bolt.DB
+	bucket      string
+	inflate     InflateFunc
+	deflate     DeflateFunc
+	random_opts *random.Options
 }
 
-func NewBoltDBLIFOIntPool(dsn string, key string) (pool.LIFOPool, error) {
+func NewBoltDBLIFOIntPool(dsn string, bucket string) (pool.LIFOPool, error) {
 
 	deflate := func(i pool.Item) (interface{}, error) {
-
-		return i.Int(), nil
+		return i.String(), nil
 	}
 
-	inflate := func(rsp interface{}, err error) (pool.Item, error) {
+	inflate := func(rsp interface{}) (pool.Item, error) {
 
-		return nil, errors.New("please write me")
+		b_int := rsp.([]byte)
+
+		int, err := strconv.ParseInt(string(b_int), 10, 64)
+
+		if err != nil {
+			return nil, err
+		}
+
+		return pool.NewIntItem(int), nil
 	}
 
-	return NewBoltDBLIFOPool(dsn, key, deflate, inflate)
+	return NewBoltDBLIFOPool(dsn, bucket, deflate, inflate)
 }
 
 func NewBoltDBLIFOPool(dsn string, bucket string, deflate DeflateFunc, inflate InflateFunc) (pool.LIFOPool, error) {
@@ -47,9 +57,10 @@ func NewBoltDBLIFOPool(dsn string, bucket string, deflate DeflateFunc, inflate I
 	if err != nil {
 		return nil, err
 	}
+
 	defer tx.Rollback()
 
-	_, err = tx.CreateBucket([]byte(bucket))
+	_, err = tx.CreateBucketIfNotExists([]byte(bucket))
 
 	if err != nil {
 		return nil, err
@@ -61,11 +72,16 @@ func NewBoltDBLIFOPool(dsn string, bucket string, deflate DeflateFunc, inflate I
 		return nil, err
 	}
 
+	opts := random.DefaultOptions()
+	opts.AlphaNumeric = true
+	opts.Length = 16
+
 	pl := BoltDBLIFOPool{
-		db:      db,
-		bucket:  bucket,
-		inflate: inflate,
-		deflate: deflate,
+		db:          db,
+		bucket:      bucket,
+		inflate:     inflate,
+		deflate:     deflate,
+		random_opts: opts,
 	}
 
 	return &pl, nil
@@ -99,27 +115,56 @@ func (pl *BoltDBLIFOPool) Push(pi pool.Item) {
 
 	pl.db.Update(func(tx *bolt.Tx) error {
 
-		i := pi.String()
+		i, err := pl.deflate(pi)
+
+		if err != nil {
+			return err
+		}
+
+		r, err := random.String(pl.random_opts)
+
+		if err != nil {
+			return err
+		}
+
+		v := i.(string)
+		k := fmt.Sprintf("%s#%s", v, r)		// mmmmmaybe?
 
 		b := tx.Bucket([]byte(pl.bucket))
-		return b.Put([]byte(i), []byte(i))
+		return b.Put([]byte(k), []byte(v))
 	})
 }
 
 func (pl *BoltDBLIFOPool) Pop() (pool.Item, bool) {
 
-	pl.db.View(func(tx *bolt.Tx) error {
+	var pi pool.Item
+
+	err := pl.db.Update(func(tx *bolt.Tx) error {
 
 		b := tx.Bucket([]byte(pl.bucket))
 		c := b.Cursor()
 
-		_, v := c.Last()
+		k, v := c.Last()
 
-		// DO SOMETHING WITH v HERE
-		log.Println(v)
+		p, err := pl.inflate(v)
 
+		if err != nil {
+			return err
+		}
+
+		err = b.Delete(k)
+
+		if err != nil {
+			return err
+		}
+
+		pi = p
 		return nil
 	})
 
-	return nil, false
+	if err != nil {
+		return nil, false
+	}
+
+	return pi, true
 }
