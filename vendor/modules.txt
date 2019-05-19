@@ -1,0 +1,7 @@
+# github.com/boltdb/bolt v1.3.1
+github.com/boltdb/bolt
+github.com/boltdb/bolt/cmd/bolt
+# github.com/whosonfirst/go-whosonfirst-pool v0.1.0
+github.com/whosonfirst/go-whosonfirst-pool
+# golang.org/x/sys v0.0.0-20190516110030-61b9204099cb
+golang.org/x/sys/unix
